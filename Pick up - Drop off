@@ -1,0 +1,113 @@
+from pyniryo import *
+
+ROBOT_IP = "192.168.0.101"
+WORKSPACE_NAME = "Marker_Workspace"
+
+robot = NiryoRobot(ROBOT_IP)
+
+robot.calibrate_auto()
+robot.update_tool()
+
+observation_pose = [
+    0.0,
+    0.45,
+    -1.0,
+    0.0,
+    -1.2,
+    0.0
+]
+
+robot.move_joints(observation_pose)
+
+robot.release_with_tool()
+
+print("Searching for blue marker...")
+
+obj_found, shape, color = robot.detect_object(
+    WORKSPACE_NAME,
+    shape=ObjectShape.ANY,
+    color=ObjectColor.BLUE
+)
+
+if not obj_found:
+    print("No blue marker found.")
+
+    robot.close_connection()
+    exit()
+
+# Relative coordinates in workspace
+rel_x, rel_y, rel_yaw = robot.get_target_pose_from_cam(
+    WORKSPACE_NAME,
+    shape=ObjectShape.ANY,
+    color=ObjectColor.BLUE
+)
+
+print("Marker position:")
+print("X:", rel_x)
+print("Y:", rel_y)
+print("Yaw:", rel_yaw)
+
+z_above = 0.12
+z_pick = 0.02
+
+# Pose above marker
+pose_above = robot.get_target_pose_from_rel(
+    WORKSPACE_NAME,
+    rel_x,
+    rel_y,
+    z_above,
+    rel_yaw
+)
+
+# Pose at marker
+pose_pick = robot.get_target_pose_from_rel(
+    WORKSPACE_NAME,
+    rel_x,
+    rel_y,
+    z_pick,
+    rel_yaw
+)
+
+
+print("Picking up marker...")
+
+# Move above object
+robot.move_pose(*pose_above.to_list())
+
+# Move down
+robot.move_pose(*pose_pick.to_list())
+
+# Grab marker
+robot.grasp_with_tool()
+
+# Lift marker
+robot.move_pose(*pose_above.to_list())
+
+print("Marker picked up!")
+
+
+# WHERE THE ROBOT DRAWSSSSS
+#_________________________
+
+
+print("Returning marker to original location...")
+
+# Move above original spot
+robot.move_pose(*pose_above.to_list())
+
+# Lower marker
+robot.move_pose(*pose_pick.to_list())
+
+# Release marker
+robot.release_with_tool()
+
+# Lift away
+robot.move_pose(*pose_above.to_list())
+
+print("Marker returned successfully!")
+
+robot.move_joints(observation_pose)
+
+robot.close_connection()
+
+print("Program complete.")
