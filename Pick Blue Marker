@@ -1,0 +1,34 @@
+from pyniryo import *
+
+robot = NiryoRobot("10.10.10.10")   
+
+robot.calibrate_auto()
+robot.update_tool()
+
+workspace_name = "Marker_Workspace"
+
+observation_pose = [
+]
+
+robot.move_joints(observation_pose)
+
+robot.release_with_tool()
+
+print("Looking for blue marker...")
+
+# Shape and color filters
+obj_found, shape, color, obj_pose = robot.vision_pick(
+    workspace_name,
+    shape=ObjectShape.ANY,
+    color=ObjectColor.BLUE
+)
+
+if obj_found:
+    print("Blue marker picked successfully!")
+    print("Detected shape:", shape)
+    print("Detected color:", color)
+
+else:
+    print("No blue object found.")
+
+robot.close_connection()
