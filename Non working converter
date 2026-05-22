@@ -1,0 +1,437 @@
+from pyniryo import *
+import cv2
+import svgwrite
+import argparse
+import time
+import urllib.request
+import urllib.parse
+import datetime
+import pathlib
+import tempfile
+import os
+
+ROBOT_IP = "10.10.10.10"
+WORKSPACE_NAME = "Marker_Workspace"
+
+# If set, skip vision and pick directly at this absolute workspace PoseObject
+# Format: [x, y, z, roll, pitch, yaw]
+PICK_OVERRIDE = [0.1986, -0.0264, 0.056, 1.6104, 1.479, -3.1146]
+
+# CLI
+parser = argparse.ArgumentParser()
+parser.add_argument('--dry-run', action='store_true', help='Do not send move commands to the robot; print planned actions')
+parser.add_argument('--save-image-on-fail', action='store_true', help='Save robot camera images to ./debug_images when detection fails')
+args = parser.parse_args()
+
+DRY_RUN = args.dry_run
+SAVE_IMAGE_ON_FAIL = args.save_image_on_fail
+
+# Connect to robot with simple retry wrapper
+def connect_robot(ip, attempts=3, delay=2):
+    for i in range(attempts):
+        try:
+            r = NiryoRobot(ip)
+            print(f"Connected to server ({ip}) on attempt {i+1}")
+            return r
+        except Exception as e:
+            print(f"Connection attempt {i+1} failed: {e}")
+            if i < attempts - 1:
+                time.sleep(delay)
+    raise RuntimeError(f"Unable to connect to robot at {ip} after {attempts} attempts")
+
+robot = connect_robot(ROBOT_IP)
+
+robot.calibrate_auto()
+robot.update_tool()
+
+observation_pose = [0.1355,-0.032,0.28,2.854,1.2295,2.6426]
+
+def clear_collision_if_needed():
+    try:
+        if hasattr(robot, 'clear_collision_detected'):
+            robot.clear_collision_detected()
+    except Exception:
+        try:
+            robot.arm.clear_collision_detected()
+        except Exception:
+            pass
+
+def do_move_joints(joints):
+    print("do_move_joints:", joints)
+    if DRY_RUN:
+        return
+    clear_collision_if_needed()
+    try:
+        robot.move_joints(joints)
+    except Exception:
+        # fallback to move if available
+        try:
+            robot.move(joints)
+        except Exception as e:
+            raise
+
+def do_move_pose(pose):
+    print("do_move_pose:", pose)
+    if DRY_RUN:
+        return
+    clear_collision_if_needed()
+    try:
+        robot.move_pose(*pose.to_list())
+    except Exception:
+        # try move with PoseObject
+        try:
+            robot.move(pose)
+        except Exception:
+            raise
+
+def do_move_pose_args(*args):
+    print("do_move_pose_args:", args)
+    if DRY_RUN:
+        return
+    clear_collision_if_needed()
+    robot.move_pose(*args)
+
+def do_grasp():
+    print("do_grasp")
+    if DRY_RUN:
+        return
+    try:
+        robot.grasp_with_tool()
+    except Exception:
+        robot.grasp()
+
+def do_release():
+    print("do_release")
+    if DRY_RUN:
+        return
+    try:
+        robot.release_with_tool()
+    except Exception:
+        robot.release()
+
+def do_close():
+    print("do_close")
+    if DRY_RUN:
+        return
+    robot.close_connection()
+
+
+def save_camera_image(tag: str):
+    try:
+        img_bytes = robot.get_img_compressed()
+        import numpy as np
+        import cv2
+        img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+        out_dir = pathlib.Path('./debug_images')
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        out_path = out_dir / f"{ts}_{tag}.png"
+        cv2.imwrite(str(out_path), img)
+        print(f"Saved camera image to {out_path}")
+    except Exception as e:
+        print("Failed to save camera image:", e)
+
+
+print(f"Moving to observation pose: {observation_pose}")
+
+do_release()
+
+print("Searching for blue marker...")
+print("PICK_OVERRIDE provided, will pick at absolute workspace pose:", PICK_OVERRIDE)
+# build pick and above-pick PoseObjects directly using provided absolute workspace coordinates
+px, py, pz, proll, ppitch, pyaw = PICK_OVERRIDE
+pose_pick = PoseObject(px, py, pz, proll, ppitch, pyaw)
+pose_above = PoseObject(px, py, pz + 0.08, proll, ppitch, pyaw)
+
+
+print("Picking up marker...")
+
+# Move above object
+do_move_pose(pose_above)
+
+# Move down
+do_move_pose(pose_pick)
+
+# Grab marker
+do_grasp()
+
+# Lift marker
+do_move_pose(pose_above)
+
+print("Marker picked up!")
+
+
+# WHERE THE ROBOT DRAWSSSSS
+
+png_file = "https://img.freepik.com/premium-psd/png-minimalist-black-star-outline-illustration_53876-634323.jpg?w=360"
+svg_file = "output.svg"
+
+
+def load_image(path_or_url):
+    """Load an image from a local path or URL into an OpenCV image (BGR)."""
+    # Local file
+    if path_or_url.startswith('http://') or path_or_url.startswith('https://'):
+        try:
+            parsed = urllib.parse.urlparse(path_or_url)
+            ext = os.path.splitext(parsed.path)[1] if parsed.path else ''
+            if not ext:
+                ext = '.png'
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+            tmp.close()
+            urllib.request.urlretrieve(path_or_url, tmp.name)
+            img = cv2.imread(tmp.name)
+            try:
+                os.remove(tmp.name)
+            except Exception:
+                pass
+            return img
+        except Exception as e:
+            print("Failed to download image:", e)
+            return None
+    else:
+        return cv2.imread(path_or_url)
+
+
+img = load_image(png_file)
+
+if img is None:
+    if DRY_RUN:
+        print(f"(dry-run) Skipping drawing because image {png_file} could not be loaded")
+        img = None
+    else:
+        raise FileNotFoundError(f"Could not load {png_file}")
+
+# Convert to grayscale
+gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+# Threshold image
+_, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+
+contours, _ = cv2.findContours(
+    thresh,
+    cv2.RETR_EXTERNAL,
+    cv2.CHAIN_APPROX_SIMPLE
+)
+
+height, width = gray.shape
+
+dwg = svgwrite.Drawing(
+    svg_file,
+    size=(width, height)
+)
+
+# Draw contours into SVG
+for contour in contours:
+
+    points = []
+
+    for point in contour:
+        x, y = point[0]
+        points.append((x, y))
+
+    if len(points) > 2:
+        dwg.add(
+            dwg.polygon(
+                points,
+                fill='black',
+                stroke='black'
+            )
+        )
+
+# Save SVG
+dwg.save()
+
+print(f"SVG saved as {svg_file}")
+import xml.etree.ElementTree as ET
+import re
+import math
+from pyniryo import *
+
+SVG_FILE = "output.svg"
+WORKSPACE_NAME = "Drawing_Workspace"
+
+
+# Drawing heights
+Z_DRAW = 0.01        # pen touching paper
+Z_LIFT = 0.05        # pen lifted
+
+# Workspace scaling (relative coordinates 0→1)
+SVG_SCALE_X = 1.0
+SVG_SCALE_Y = 1.0
+
+start_pose = [
+]
+
+robot.move_joints(start_pose)
+
+tree = ET.parse(SVG_FILE)
+root = tree.getroot()
+
+# SVG namespace handling
+ns = {'svg': 'http://www.w3.org/2000/svg'}
+
+svg_width = float(root.attrib.get("width", "500").replace("px", ""))
+svg_height = float(root.attrib.get("height", "500").replace("px", ""))
+
+print("SVG size:", svg_width, svg_height)
+
+def parse_path_d(path_d):
+    """
+    Very basic parser for M and L commands.
+    Supports:
+      M x y
+      L x y
+    """
+
+    tokens = re.findall(r'[ML]|-?\d+\.?\d*', path_d)
+
+    coords = []
+
+    i = 0
+
+    current_cmd = None
+
+    while i < len(tokens):
+
+        token = tokens[i]
+
+        if token in ['M', 'L']:
+            current_cmd = token
+            i += 1
+            continue
+
+        x = float(tokens[i])
+        y = float(tokens[i + 1])
+
+        coords.append((x, y))
+
+        i += 2
+
+    return coords
+
+def svg_to_workspace(x, y):
+
+    # Normalize
+    rel_x = x / svg_width
+    rel_y = y / svg_height
+
+    # Flip Y axis
+    rel_y = 1.0 - rel_y
+
+    # Scale if needed
+    rel_x *= SVG_SCALE_X
+    rel_y *= SVG_SCALE_Y
+
+    return rel_x, rel_y
+
+def draw_polyline(points):
+
+    if len(points) < 2:
+        return
+
+    # Move above first point
+    first_x, first_y = svg_to_workspace(points[0][0], points[0][1])
+
+    pose = robot.get_target_pose_from_rel(
+            WORKSPACE_NAME,
+            first_x,
+            first_y,
+            Z_LIFT,
+            0
+        )
+    do_move_pose(pose)
+
+    # Lower pen
+    pose = robot.get_target_pose_from_rel(
+            WORKSPACE_NAME,
+            first_x,
+            first_y,
+            Z_DRAW,
+            0
+        )
+    do_move_pose(pose)
+
+    # Draw path
+    for x, y in points:
+
+        rel_x, rel_y = svg_to_workspace(x, y)
+
+        pose = robot.get_target_pose_from_rel(
+            WORKSPACE_NAME,
+            rel_x,
+            rel_y,
+            Z_DRAW,
+            0
+        )
+
+        do_move_pose(pose)
+
+    # Lift pen
+    last_x, last_y = svg_to_workspace(points[-1][0], points[-1][1])
+
+    pose = robot.get_target_pose_from_rel(
+            WORKSPACE_NAME,
+            last_x,
+            last_y,
+            Z_LIFT,
+            0
+        )
+    do_move_pose(pose)
+
+# Handle polygons
+for polygon in root.findall('.//{http://www.w3.org/2000/svg}polygon'):
+
+    points_attr = polygon.attrib.get('points', '')
+
+    raw_points = points_attr.strip().split()
+
+    points = []
+
+    for p in raw_points:
+
+        x, y = p.split(',')
+
+        points.append((float(x), float(y)))
+
+    print(f"Drawing polygon with {len(points)} points")
+
+    draw_polyline(points)
+
+# Handle paths
+for path in root.findall('.//{http://www.w3.org/2000/svg}path'):
+
+    d = path.attrib.get('d', '')
+
+    points = parse_path_d(d)
+
+    print(f"Drawing path with {len(points)} points")
+
+    draw_polyline(points)
+
+do_move_joints(start_pose)
+
+do_close()
+
+print("Drawing complete!")
+
+print("Returning marker to original location...")
+
+# Move above original spot
+robot.move_pose(*pose_above.to_list())
+
+# Lower marker
+robot.move_pose(*pose_pick.to_list())
+
+# Release marker
+robot.release_with_tool()
+
+# Lift away
+robot.move_pose(*pose_above.to_list())
+
+print("Marker returned successfully!")
+
+robot.move_joints(observation_pose)
+
+robot.close_connection()
+
+print("Program complete.")
