@@ -1,0 +1,216 @@
+import json
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
+from pyniryo import *
+
+pip install openai python-dotenv pyniryo
+OPENAI_API_KEY=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
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
+
+load_dotenv()
+
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
+
+# ============================================================
+# ROBOT CONFIGURATION
+# ============================================================
+
+ROBOT_IP = "10.10.10.10"
+
+# Workspace boundaries (meters)
+MIN_X = 0.15
+MAX_X = 0.35
+
+MIN_Y = -0.10
+MAX_Y = 0.10
+
+# Z heights
+DRAW_Z = 0.10
+TRAVEL_Z = 0.14
+
+# Robot orientation
+ROLL = 0
+PITCH = 1.57
+YAW = 0
+
+# ============================================================
+# OPENAI SYSTEM PROMPT
+# ============================================================
+
+SYSTEM_PROMPT = """
+You generate drawing coordinates for a robotic arm.
+
+IMPORTANT RULES:
+- Return ONLY valid JSON
+- Do NOT include markdown
+- Coordinates must stay between 0 and 100
+- Shapes should be centered and proportional
+- Generate smooth paths
+- Include enough points for curves
+
+Required JSON format:
+
+{
+  "points": [
+    [x, y],
+    [x, y],
+    [x, y]
+  ]
+}
+"""
+
+# ============================================================
+# SCALE COORDINATES
+# ============================================================
+
+def scale_coordinate(x, y):
+
+    robot_x = MIN_X + (x / 100.0) * (MAX_X - MIN_X)
+
+    robot_y = MIN_Y + (y / 100.0) * (MAX_Y - MIN_Y)
+
+    return robot_x, robot_y
+
+# ============================================================
+# GENERATE SHAPE WITH AI
+# ============================================================
+
+def generate_shape(shape_request):
+
+    print("\nGenerating coordinates with AI...\n")
+
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT
+            },
+            {
+                "role": "user",
+                "content": f"Generate coordinates for this drawing: {shape_request}"
+            }
+        ],
+        temperature=0.7
+    )
+
+    content = response.choices[0].message.content
+
+    print("AI RESPONSE:")
+    print(content)
+
+    data = json.loads(content)
+
+    return data["points"]
+
+# ============================================================
+# INITIALIZE ROBOT
+# ============================================================
+
+print("Connecting to Ned2 robot...")
+
+robot = NiryoRobot(ROBOT_IP)
+
+robot.calibrate_auto()
+
+robot.update_tool()
+
+print("Robot connected and calibrated.")
+
+# ============================================================
+# MOVE FUNCTION
+# ============================================================
+
+def move_to(x, y, z):
+
+    robot.move_pose(
+        x,
+        y,
+        z,
+        ROLL,
+        PITCH,
+        YAW
+    )
+
+# ============================================================
+# DRAW SHAPE
+# ============================================================
+
+def draw_shape(points):
+
+    if len(points) == 0:
+        print("No points generated.")
+        return
+
+    print(f"\nDrawing {len(points)} points...\n")
+
+    # First point
+    first_x, first_y = scale_coordinate(
+        points[0][0],
+        points[0][1]
+    )
+
+    # Move above first point
+    move_to(first_x, first_y, TRAVEL_Z)
+
+    # Pen down
+    move_to(first_x, first_y, DRAW_Z)
+
+    # Draw through all points
+    for point in points:
+
+        x = point[0]
+        y = point[1]
+
+        # Safety clamp
+        x = max(0, min(100, x))
+        y = max(0, min(100, y))
+
+        robot_x, robot_y = scale_coordinate(x, y)
+
+        print(f"Moving to: X={robot_x:.3f}, Y={robot_y:.3f}")
+
+        move_to(
+            robot_x,
+            robot_y,
+            DRAW_Z
+        )
+
+    # Pen up at end
+    move_to(robot_x, robot_y, TRAVEL_Z)
+
+    print("\nDrawing complete.")
+
+# ============================================================
+# MAIN PROGRAM
+# ============================================================
+
+try:
+
+    print("\n=== AI ROBOT DRAWING SYSTEM ===\n")
+
+    shape_request = input(
+        "What would you like the robot to draw?\n> "
+    )
+
+    points = generate_shape(shape_request)
+
+    draw_shape(points)
+
+except Exception as e:
+
+    print("\nERROR:")
+    print(e)
+
+finally:
+
+    print("\nClosing robot connection...")
+
+    robot.close_connection()
+
+    print("Done.")
