@@ -1,0 +1,271 @@
+import math
+from pyniryo import *
+
+# ============================================================
+# ROBOT CONFIGURATION
+# ============================================================
+
+ROBOT_IP = "10.10.10.10"
+
+# Workspace boundaries (meters)
+MIN_X = 0.15
+MAX_X = 0.35
+
+MIN_Y = -0.10
+MAX_Y = 0.10
+
+# Z heights
+DRAW_Z = 0.10
+TRAVEL_Z = 0.14
+
+# Robot orientation
+ROLL = 0
+PITCH = 1.57
+YAW = 0
+
+# ============================================================
+# SCALE COORDINATES
+# ============================================================
+
+def scale_coordinate(x, y):
+
+    robot_x = MIN_X + (x / 100.0) * (MAX_X - MIN_X)
+
+    robot_y = MIN_Y + (y / 100.0) * (MAX_Y - MIN_Y)
+
+    return robot_x, robot_y
+
+# ============================================================
+# SHAPE GENERATORS
+# ============================================================
+
+def generate_circle():
+
+    points = []
+
+    radius = 35
+
+    for deg in range(0, 361, 5):
+
+        rad = math.radians(deg)
+
+        x = 50 + radius * math.cos(rad)
+        y = 50 + radius * math.sin(rad)
+
+        points.append((x, y))
+
+    return points
+
+
+def generate_square():
+
+    return [
+        (20, 20),
+        (80, 20),
+        (80, 80),
+        (20, 80),
+        (20, 20)
+    ]
+
+
+def generate_triangle():
+
+    return [
+        (50, 85),
+        (15, 15),
+        (85, 15),
+        (50, 85)
+    ]
+
+
+def generate_spiral():
+
+    points = []
+
+    for t in range(0, 720, 5):
+
+        angle = math.radians(t)
+
+        radius = t * 0.05
+
+        x = 50 + radius * math.cos(angle)
+        y = 50 + radius * math.sin(angle)
+
+        points.append((x, y))
+
+    return points
+
+
+def generate_wave():
+
+    points = []
+
+    for x in range(0, 101, 2):
+
+        y = 50 + 20 * math.sin(x * 0.15)
+
+        points.append((x, y))
+
+    return points
+
+
+def generate_heart():
+
+    points = []
+
+    for t in range(0, 360, 3):
+
+        rad = math.radians(t)
+
+        x = 16 * math.sin(rad) ** 3
+
+        y = (
+            13 * math.cos(rad)
+            - 5 * math.cos(2 * rad)
+            - 2 * math.cos(3 * rad)
+            - math.cos(4 * rad)
+        )
+
+        # Normalize
+        x = 50 + x * 2
+        y = 50 + y * 2
+
+        points.append((x, y))
+
+    return points
+
+# ============================================================
+# SELECT SHAPE
+# ============================================================
+
+def generate_shape(shape_name):
+
+    shape_name = shape_name.lower()
+
+    if shape_name == "circle":
+        return generate_circle()
+
+    elif shape_name == "square":
+        return generate_square()
+
+    elif shape_name == "triangle":
+        return generate_triangle()
+
+    elif shape_name == "spiral":
+        return generate_spiral()
+
+    elif shape_name == "wave":
+        return generate_wave()
+
+    elif shape_name == "heart":
+        return generate_heart()
+
+    else:
+        print("Unknown shape. Using circle.")
+        return generate_circle()
+
+# ============================================================
+# CONNECT TO ROBOT
+# ============================================================
+
+print("Connecting to Ned2 robot...")
+
+robot = NiryoRobot(ROBOT_IP)
+
+robot.calibrate_auto()
+
+robot.update_tool()
+
+print("Robot connected.")
+
+# ============================================================
+# MOVE FUNCTION
+# ============================================================
+
+def move_to(x, y, z):
+
+    robot.move_pose(
+        x,
+        y,
+        z,
+        ROLL,
+        PITCH,
+        YAW
+    )
+
+# ============================================================
+# DRAW SHAPE
+# ============================================================
+
+def draw_shape(points):
+
+    if len(points) == 0:
+        return
+
+    print(f"Drawing {len(points)} points...")
+
+    first_x, first_y = scale_coordinate(
+        points[0][0],
+        points[0][1]
+    )
+
+    # Move above start point
+    move_to(first_x, first_y, TRAVEL_Z)
+
+    # Pen down
+    move_to(first_x, first_y, DRAW_Z)
+
+    for point in points:
+
+        x = max(0, min(100, point[0]))
+        y = max(0, min(100, point[1]))
+
+        robot_x, robot_y = scale_coordinate(x, y)
+
+        print(f"Moving to X={robot_x:.3f}, Y={robot_y:.3f}")
+
+        move_to(
+            robot_x,
+            robot_y,
+            DRAW_Z
+        )
+
+    # Pen up
+    move_to(robot_x, robot_y, TRAVEL_Z)
+
+    print("Drawing complete.")
+
+# ============================================================
+# MAIN PROGRAM
+# ============================================================
+
+try:
+
+    print("\n=== OFFLINE AI-LIKE DRAWING SYSTEM ===\n")
+
+    print("Available shapes:")
+    print("- circle")
+    print("- square")
+    print("- triangle")
+    print("- spiral")
+    print("- wave")
+    print("- heart")
+
+    shape = input("\nEnter shape:\n> ")
+
+    points = generate_shape(shape)
+
+    draw_shape(points)
+
+except Exception as e:
+
+    print("\nERROR:")
+    print(e)
+
+finally:
+
+    print("\nClosing robot connection...")
+
+    robot.close_connection()
+
+    print("Done.")
