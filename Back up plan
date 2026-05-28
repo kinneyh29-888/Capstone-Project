@@ -1,10 +1,7 @@
-That’s completely fine — the idea is:
-
 PNG → SVG → Robot Drawing
 
 You do NOT use the PNG directly in the robot code.
 
-Easiest Workflow
 Step 1 — Open PNG in Inkscape
 File → Open
 Select your PNG
@@ -14,26 +11,17 @@ In Inkscape:
 
 Path → Trace Bitmap
 
-Recommended settings:
-
 Single Scan
 Brightness Cutoff
 Check “Preview”
-
-Then click:
-
 Apply
 
-Now you have a vector version.
-
 Step 3 — Delete the Original PNG Layer
-
-IMPORTANT.
 
 After tracing:
 
 move the vector slightly
-you’ll see TWO images:
+
 original PNG
 traced vector
 
@@ -47,17 +35,12 @@ File → Save As → Plain SVG
 Save it as:
 
 output.svg
-Then Your Python Code Works
 
 Keep:
 
 SVG_FILE = "output.svg"
 
 and run the script.
-
-VERY IMPORTANT
-
-Your PNG should ideally be:
 
 black and white
 simple
