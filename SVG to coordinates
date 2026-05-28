@@ -21,10 +21,6 @@ robot = NiryoRobot(ROBOT_IP)
 robot.calibrate_auto()
 robot.update_tool()
 
-# =========================================================
-# OBSERVATION / START POSE
-# =========================================================
-
 start_pose = [
 ]
 
