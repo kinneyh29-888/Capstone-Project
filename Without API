@@ -1,10 +1,6 @@
 import math
 from pyniryo import *
 
-# ============================================================
-# ROBOT CONFIGURATION
-# ============================================================
-
 ROBOT_IP = "10.10.10.10"
 
 # Workspace boundaries (meters)
@@ -23,10 +19,6 @@ ROLL = 0
 PITCH = 1.57
 YAW = 0
 
-# ============================================================
-# SCALE COORDINATES
-# ============================================================
-
 def scale_coordinate(x, y):
 
     robot_x = MIN_X + (x / 100.0) * (MAX_X - MIN_X)
@@ -34,10 +26,6 @@ def scale_coordinate(x, y):
     robot_y = MIN_Y + (y / 100.0) * (MAX_Y - MIN_Y)
 
     return robot_x, robot_y
-
-# ============================================================
-# SHAPE GENERATORS
-# ============================================================
 
 def generate_circle():
 
@@ -132,11 +120,59 @@ def generate_heart():
 
         points.append((x, y))
 
+def generate_trapezoid():
+
+    return [
+        (30, 20),
+        (70, 20),
+        (85, 80),
+        (15, 80),
+        (30, 20)
+    ]
+
+
+def generate_hexagon():
+
+    points = []
+
+    center_x = 50
+    center_y = 50
+    radius = 35
+
+    for deg in range(0, 361, 60):
+
+        rad = math.radians(deg)
+
+        x = center_x + radius * math.cos(rad)
+        y = center_y + radius * math.sin(rad)
+
+        points.append((x, y))
+
     return points
 
-# ============================================================
-# SELECT SHAPE
-# ============================================================
+
+def generate_poke_a_dots():
+
+    points = []
+
+    dot_spacing = 20
+    dot_radius = 3
+
+    for center_x in range(20, 81, dot_spacing):
+
+        for center_y in range(20, 81, dot_spacing):
+
+            for deg in range(0, 361, 30):
+
+                rad = math.radians(deg)
+
+                x = center_x + dot_radius * math.cos(rad)
+                y = center_y + dot_radius * math.sin(rad)
+
+                points.append((x, y))
+
+    return points
+    return points
 
 def generate_shape(shape_name):
 
@@ -160,13 +196,18 @@ def generate_shape(shape_name):
     elif shape_name == "heart":
         return generate_heart()
 
+    elif shape_name == "trapezoid":
+        return generate_trapezoid()
+
+    elif shape_name == "hexagon":
+        return generate_hexagon()
+
+    elif shape_name == "polka dots":
+        return generate_polka_dots()
+
     else:
         print("Unknown shape. Using circle.")
-        return generate_circle()
-
-# ============================================================
-# CONNECT TO ROBOT
-# ============================================================
+        return generate_square()
 
 print("Connecting to Ned2 robot...")
 
@@ -178,10 +219,6 @@ robot.update_tool()
 
 print("Robot connected.")
 
-# ============================================================
-# MOVE FUNCTION
-# ============================================================
-
 def move_to(x, y, z):
 
     robot.move_pose(
@@ -192,10 +229,6 @@ def move_to(x, y, z):
         PITCH,
         YAW
     )
-
-# ============================================================
-# DRAW SHAPE
-# ============================================================
 
 def draw_shape(points):
 
@@ -235,10 +268,6 @@ def draw_shape(points):
 
     print("Drawing complete.")
 
-# ============================================================
-# MAIN PROGRAM
-# ============================================================
-
 try:
 
     print("\n=== OFFLINE AI-LIKE DRAWING SYSTEM ===\n")
@@ -250,6 +279,9 @@ try:
     print("- spiral")
     print("- wave")
     print("- heart")
+    print("- trapezoid")
+    print("- hexagon")
+    print("- polka dots")
 
     shape = input("\nEnter shape:\n> ")
 
