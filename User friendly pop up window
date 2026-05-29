@@ -1,46 +1,194 @@
+import math
 import tkinter as tk
-from PIL import Image, ImageTk
+from tkinter import messagebox
 
-# Function to handle selection
-def select_shape(shape):
-    result_label.config(text=f"You selected: {shape}")
+BUTTON_CHOICES = [
+    "Square",
+    "Circle",
+    "Triangle",
+    "Wave",
+    "Spiral",
+    "Poke a Dots",
+    "Trapezoid"
+]
 
-# Create main window
-root = tk.Tk()
-root.title("Choose a Shape")
-root.geometry("500x300")
+LIGHT_BLUE = "#d6f2ff"
+ICON_SIZE = 72
 
-title = tk.Label(root, text="Select a Shape", font=("Arial", 18))
-title.pack(pady=10)
 
-frame = tk.Frame(root)
-frame.pack()
+def on_choice(choice: str) -> None:
+    messagebox.showinfo("Shape Selected", f"You selected: {choice}")
 
-# Load images
-circle_img = Image.open("circle.png")
-circle_img = circle_img.resize((100, 100))
-circle_photo = ImageTk.PhotoImage(circle_img)
 
-square_img = Image.open("square.png")
-square_img = square_img.resize((100, 100))
-square_photo = ImageTk.PhotoImage(square_img)
+def create_icon(root: tk.Tk, shape: str) -> tk.PhotoImage:
+    icon = tk.PhotoImage(width=ICON_SIZE, height=ICON_SIZE)
+    bg = LIGHT_BLUE
+    icon.put(bg, to=(0, 0, ICON_SIZE - 1, ICON_SIZE - 1))
 
-# Create buttons with images
-circle_button = tk.Button(
-    frame,
-    image=circle_photo,
-    command=lambda: select_shape("Circle")
-)
-circle_button.grid(row=0, column=0, padx=20)
+    def draw_rectangle(x1, y1, x2, y2, color):
+        icon.put(color, to=(x1, y1, x2, y2))
 
-square_button = tk.Button(
-    frame,
-    image=square_photo,
-    command=lambda: select_shape("Square")
-)
-square_button.grid(row=0, column=1, padx=20)
+    def draw_circle(cx, cy, r, color):
+        for y in range(cy - r, cy + r + 1):
+            for x in range(cx - r, cx + r + 1):
+                if (x - cx) ** 2 + (y - cy) ** 2 <= r ** 2:
+                    icon.put(color, (x, y))
 
-result_label = tk.Label(root, text="", font=("Arial", 14))
-result_label.pack(pady=20)
+    def draw_triangle(points, color):
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        for y in range(min_y, max_y + 1):
+            for x in range(min_x, max_x + 1):
+                if _point_in_triangle((x, y), points):
+                    icon.put(color, (x, y))
 
-root.mainloop()
+    def draw_point(x, y, color):
+        if 0 <= x < ICON_SIZE and 0 <= y < ICON_SIZE:
+            icon.put(color, (x, y))
+
+    def draw_line(points, color):
+        for start, end in zip(points, points[1:]):
+            x1, y1 = start
+            x2, y2 = end
+            dx = x2 - x1
+            dy = y2 - y1
+            steps = max(abs(dx), abs(dy))
+            if steps == 0:
+                draw_point(x1, y1, color)
+                continue
+            for step in range(steps + 1):
+                x = int(x1 + dx * step / steps)
+                y = int(y1 + dy * step / steps)
+                icon.put(color, (x, y))
+
+    def draw_path(points, color, thickness=2):
+        for p in points:
+            for ox in range(-thickness, thickness + 1):
+                for oy in range(-thickness, thickness + 1):
+                    if ox * ox + oy * oy <= thickness * thickness:
+                        draw_point(p[0] + ox, p[1] + oy, color)
+        draw_line(points, color)
+
+    def draw_polygon(points, color):
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        min_x, max_x = max(min(xs), 0), min(max(xs), ICON_SIZE - 1)
+        min_y, max_y = max(min(ys), 0), min(max(ys), ICON_SIZE - 1)
+        for y in range(min_y, max_y + 1):
+            intersections = []
+            for start, end in zip(points, points[1:] + [points[0]]):
+                x1, y1 = start
+                x2, y2 = end
+                if y1 == y2:
+                    continue
+                if (y >= min(y1, y2)) and (y <= max(y1, y2)):
+                    t = (y - y1) / (y2 - y1)
+                    xi = x1 + t * (x2 - x1)
+                    intersections.append(int(round(xi)))
+            if len(intersections) >= 2:
+                intersections.sort()
+                for x in range(max(min(intersections), 0), min(max(intersections), ICON_SIZE - 1) + 1):
+                    icon.put(color, (x, y))
+
+    def _point_in_triangle(pt, tri):
+        (x1, y1), (x2, y2), (x3, y3) = tri
+        d1 = _sign(pt, (x1, y1), (x2, y2))
+        d2 = _sign(pt, (x2, y2), (x3, y3))
+        d3 = _sign(pt, (x3, y3), (x1, y1))
+        has_neg = (d1 < 0) or (d2 < 0) or (d3 < 0)
+        has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
+        return not (has_neg and has_pos)
+
+    def _sign(p1, p2, p3):
+        return (p1[0] - p3[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p3[1])
+
+    shape_color = "#1b4f72"
+    accent_color = "#0a6f9b"
+
+    if shape == "Square":
+        draw_rectangle(16, 16, 56, 56, shape_color)
+    elif shape == "Circle":
+        draw_circle(36, 36, 22, shape_color)
+    elif shape == "Triangle":
+        draw_triangle([(18, 54), (54, 54), (36, 16)], shape_color)
+    elif shape == "Wave":
+        wave_points = []
+        for i in range(0, 13):
+            x = 12 + i * 4
+            y = int(36 + 12 * math.sin((i / 12) * math.pi * 2))
+            wave_points.append((x, y))
+        draw_path(wave_points, shape_color, thickness=2)
+    elif shape == "Spiral":
+        cx, cy = 36, 36
+        spiral_points = []
+        for step in range(0, 181):
+            angle = step * math.pi / 90
+            r = 2 + 18 * (step / 180)
+            x = int(cx + r * math.cos(angle))
+            y = int(cy + r * math.sin(angle))
+            spiral_points.append((x, y))
+        draw_path(spiral_points, shape_color, thickness=1)
+    elif shape == "Poke a Dots":
+        for dx in (18, 36, 54):
+            for dy in (18, 36, 54):
+                draw_circle(dx, dy, 6, shape_color)
+    elif shape == "Trapezoid":
+        trapezoid_points = [(18, 22), (54, 22), (62, 54), (10, 54)]
+        draw_polygon(trapezoid_points, shape_color)
+    else:
+        draw_rectangle(16, 16, 56, 56, accent_color)
+
+    return icon
+
+
+def build_window() -> tk.Tk:
+    root = tk.Tk()
+    root.title("Shape Selector")
+    root.geometry("440x420")
+    root.resizable(False, False)
+    root.configure(bg=LIGHT_BLUE)
+
+    header = tk.Label(
+        root,
+        text="Choose the shape or pattern you want:",
+        font=("Segoe UI", 14, "bold"),
+        bg=LIGHT_BLUE,
+        pady=14
+    )
+    header.pack()
+
+    button_frame = tk.Frame(root, bg=LIGHT_BLUE, padx=12, pady=12)
+    button_frame.pack(fill="both", expand=True)
+
+    root.icon_images = []
+
+    for index, label in enumerate(BUTTON_CHOICES):
+        icon = create_icon(root, label)
+        root.icon_images.append(icon)
+        btn = tk.Button(
+            button_frame,
+            image=icon,
+            width=100,
+            height=100,
+            bg="white",
+            activebackground="#e6f7ff",
+            bd=2,
+            relief="raised",
+            command=lambda value=label: on_choice(value)
+        )
+        btn.grid(row=index // 2, column=index % 2, padx=10, pady=10, sticky="nsew")
+
+    for i in range(2):
+        button_frame.columnconfigure(i, weight=1)
+    for i in range(4):
+        button_frame.rowconfigure(i, weight=1)
+
+    return root
+
+
+if __name__ == "__main__":
+    app = build_window()
+    app.mainloop()
+
