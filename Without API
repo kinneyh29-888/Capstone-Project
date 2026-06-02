@@ -1,7 +1,9 @@
-import math
 from pyniryo import *
+import traceback
+robot = NiryoRobot("10.10.10.10")
 
-ROBOT_IP = "10.10.10.10"
+print(type(robot))
+print(dir(robot))
 
 # Workspace boundaries (meters)
 MIN_X = 0.15
@@ -119,7 +121,7 @@ def generate_heart():
         y = 50 + y * 2
 
         points.append((x, y))
-
+    return points
 def generate_trapezoid():
 
     return [
@@ -151,7 +153,7 @@ def generate_hexagon():
     return points
 
 
-def generate_poke_a_dots():
+def generate_polka_dots():
 
     points = []
 
@@ -289,10 +291,8 @@ try:
 
     draw_shape(points)
 
-except Exception as e:
-
-    print("\nERROR:")
-    print(e)
+except Exception:
+    traceback.print_exc()
 
 finally:
 
