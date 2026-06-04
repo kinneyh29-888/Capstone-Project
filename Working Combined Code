@@ -1,3 +1,4 @@
+# !/usr/bin/env python3
 import math
 import tkinter as tk
 from tkinter import messagebox
@@ -11,43 +12,70 @@ robot = NiryoRobot("10.10.10.10")
 robot.calibrate_auto()
 robot.update_tool()
 print("Robot connected.")
+robot.clear_collision_detected()
+robot.led_ring_rainbow_cycle()
+
+# -----------------------------------------------
+#  ORIENTATIONS
+#  UPRIGHT  - used for travel, pickup, putdown
+#  DRAWING  - tilted so marker tip faces paper
+# -----------------------------------------------
+UPRIGHT_ROLL  = 0
+UPRIGHT_PITCH = 1.57
+UPRIGHT_YAW   = 0
+
+DRAW_ROLL  = -0.11
+DRAW_PITCH =  0.165
+DRAW_YAW   = -0.125
 
 # -----------------------------------------------
 #  WORKSPACE BOUNDARIES (metres)
 # -----------------------------------------------
-MIN_X = 0.15
-MAX_X = 0.35
+
+#MIN_X = 0.15
+#MAX_X = 0.35
+
+MIN_X = 0.3
+MAX_X = .45
 MIN_Y = -0.10
 MAX_Y = 0.10
-DRAW_Z   = 0.10
-TRAVEL_Z = 0.14
 
-# NORMAL TOOL ORIENTATION
+#CENTER_X = 0.3
+#CENTER_Y = .01
 
-ROLL  = 0.0
-PITCH = 1.57
-YAW   = 0.0
+#MIN_X = CENTER_X - 0.05
+#MAX_X = CENTER_X + 0.05
 
-# DRAWING ORIENTATION
+#MIN_Y = CENTER_Y - 0.05
+#MAX_Y = CENTER_Y + 0.05
 
-DRAW_ROLL  = 0.0
-DRAW_PITCH = 0.08
-DRAW_YAW   = 0.1
+DRAW_Z   = 0.09    # pen-on-paper height (drawing orientation)
+TRAVEL_Z = 0.14    # pen-up travel height
+
+# -----------------------------------------------
+#  SAFE INTERMEDIATE POSE
+#  Robot passes through here when moving between
+#  pickup and the drawing area to avoid singularities.
+#  Adjust if needed - this is roughly centre of workspace.
+# -----------------------------------------------
+SAFE_X = 0.25
+SAFE_Y = 0.00
+SAFE_Z = 0.18
 
 # -----------------------------------------------
 #  MARKER HOLDER POSITION
-#  Set these to wherever your marker holder sits
 # -----------------------------------------------
-MARKER_X    = 0.20
-MARKER_Y    = 0.15
-MARKER_Z_UP = 0.16   # height to hover above holder
-MARKER_Z_GRIP = 0.06 # height to grip the marker
+MARKER_X      = 0.20
+MARKER_Y      = 0.15
+MARKER_Z_UP   = 0.16   # hover height above holder
+MARKER_Z_GRIP = 0.060   # grip height inside holder
+
 
 # -----------------------------------------------
 #  GUI CONSTANTS
 # -----------------------------------------------
-LIGHT_BLUE    = "#d6f2ff"
-ICON_SIZE     = 72
+LIGHT_BLUE     = "#d6f2ff"
+ICON_SIZE      = 72
 BUTTON_CHOICES = [
     "Square",
     "Circle",
@@ -59,32 +87,47 @@ BUTTON_CHOICES = [
 ]
 
 # -----------------------------------------------
+#  LOW-LEVEL MOVE HELPERS
+# -----------------------------------------------
+
+
+def move_upright(x, y, z):
+    """Move to a pose using the upright (travel) orientation."""
+    robot.move_pose(x, y, z, UPRIGHT_ROLL, UPRIGHT_PITCH, UPRIGHT_YAW)
+
+
+def move_drawing(x, y, z):
+    """Move to a pose using the tilted drawing orientation."""
+
+    robot.move_pose(x, y, z, DRAW_ROLL, DRAW_PITCH, DRAW_YAW)
+
+
+def go_safe():
+    """Move to the safe intermediate pose (upright)."""
+    move_upright(SAFE_X, SAFE_Y, SAFE_Z)
+
+# -----------------------------------------------
 #  MARKER PICKUP / DROP OFF
 # -----------------------------------------------
 def pick_up_marker():
     print("Picking up marker...")
     robot.open_gripper(500)
-    # Move above holder
-    robot.move_pose(MARKER_X, MARKER_Y, MARKER_Z_UP, ROLL, PITCH, YAW)
-    # Lower onto marker
-    robot.move_pose(MARKER_X, MARKER_Y, MARKER_Z_GRIP, ROLL, PITCH, YAW)
-    # Grip
+    go_safe()                                                      # clear path first
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_UP)                 # hover above holder
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_GRIP)               # lower onto marker
     robot.close_gripper(500)
-    # Lift back up
-    robot.move_pose(MARKER_X, MARKER_Y, MARKER_Z_UP, ROLL, PITCH, YAW)
-   # robot.move_pose(MARKER_X, MARKER_Y, MARKER_Z_UP, ROLL, .0357, YAW)
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_UP)                 # lift up (still upright)
+    go_safe()                                                      # back to safe zone
     print("Marker picked up.")
 
 def put_down_marker():
     print("Putting down marker...")
-    # Move above holder
-    robot.move_pose(MARKER_X, MARKER_Y, MARKER_Z_UP, ROLL, PITCH, YAW)
-    # Lower into holder
-    robot.move_pose(MARKER_X, MARKER_Y, MARKER_Z_GRIP, ROLL, PITCH, YAW)
-    # Release
+    go_safe()                                                      # come back upright first
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_UP)                 # hover above holder
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_GRIP)               # lower into holder
     robot.open_gripper(500)
-    # Lift away
-    robot.move_pose(MARKER_X, MARKER_Y, MARKER_Z_UP, ROLL, PITCH, YAW)
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_UP)                 # lift away
+    go_safe()
     print("Marker put down.")
 
 # -----------------------------------------------
@@ -95,13 +138,11 @@ def scale_coordinate(x, y):
     robot_y = MIN_Y + (y / 100.0) * (MAX_Y - MIN_Y)
     return robot_x, robot_y
 
-def move_to(x, y, z, roll=ROLL, pitch=PITCH, yaw=YAW):
-    robot.move_pose(x, y, z, roll, pitch, yaw)
-
 # -----------------------------------------------
 #  SHAPE GENERATORS
 # -----------------------------------------------
 def generate_circle():
+    robot.play_sound('Circle.mp3')
     points = []
     radius = 35
     for deg in range(0, 361, 5):
@@ -111,12 +152,15 @@ def generate_circle():
     return points
 
 def generate_square():
+    robot.play_sound('Square.mp3')
     return [(20, 20), (80, 20), (80, 80), (20, 80), (20, 20)]
 
 def generate_triangle():
+    robot.play_sound('Traingle.mp3')
     return [(50, 85), (15, 15), (85, 15), (50, 85)]
 
 def generate_spiral():
+    robot.play_sound('Spiral.mp3')
     points = []
     for t in range(0, 720, 5):
         angle  = math.radians(t)
@@ -126,6 +170,7 @@ def generate_spiral():
     return points
 
 def generate_wave():
+    robot.play_sound('Wave.mp3')
     points = []
     for x in range(0, 101, 2):
         y = 50 + 20 * math.sin(x * 0.15)
@@ -145,6 +190,7 @@ def generate_heart():
     return points
 
 def generate_trapezoid():
+    robot.play_sound('Trapezoid.mp3')
     return [(30, 20), (70, 20), (85, 80), (15, 80), (30, 20)]
 
 def generate_hexagon():
@@ -185,67 +231,45 @@ def generate_shape(shape_name):
 
 # -----------------------------------------------
 #  ROBOT DRAWING
+#  Sequence per shape:
+#    1. Travel upright to first point (high)
+#    2. Tilt to drawing orientation at travel height
+#    3. Lower pen to paper
+#    4. Draw all points in drawing orientation
+#    5. Lift pen (drawing orientation, travel height)
+#    6. Return to upright at safe pose
 # -----------------------------------------------
 def draw_shape(points):
     if not points:
         return
-
     print("Drawing " + str(len(points)) + " points...")
 
-    # First point
-    rx, ry = scale_coordinate(*points[0])
+    first_rx, first_ry = scale_coordinate(*points[0])
+    
 
-    # Move above start point using normal orientation
-    move_to(rx, ry, TRAVEL_Z)
+    # Step 1: travel upright to above first point
+    move_upright(first_rx, first_ry, TRAVEL_Z)
 
-    # Rotate wrist once and lower to drawing height
-    robot.move_pose(
-        rx, ry, DRAW_Z,
-        DRAW_ROLL,
-        DRAW_PITCH,
-        DRAW_YAW
-    )
+    # Step 2: tilt into drawing orientation (still at travel height)
+    move_drawing(first_rx, first_ry, TRAVEL_Z)
 
-    # Draw shape using drawing orientation
+    # Step 3: lower pen to paper
+    move_drawing(first_rx, first_ry, DRAW_Z)
+
+    # Step 4: draw all points
+    last_rx, last_ry = first_rx, first_ry
     for pt in points:
         px = max(0.0, min(100.0, pt[0]))
         py = max(0.0, min(100.0, pt[1]))
+        last_rx, last_ry = scale_coordinate(px, py)
+        print("  -> X=" + str(round(last_rx, 3)) + "  Y=" + str(round(last_ry, 3)))
+        move_drawing(last_rx, last_ry, DRAW_Z)
 
-        rx, ry = scale_coordinate(px, py)
+    # Step 5: lift pen (keep drawing orientation to avoid jerking)
+    move_drawing(last_rx, last_ry, TRAVEL_Z)
 
-        print(
-            "  -> X=" + str(round(rx, 3)) +
-            "  Y=" + str(round(ry, 3))
-        )
-
-        robot.move_pose(
-            rx,
-            ry,
-            DRAW_Z,
-            DRAW_ROLL,
-            DRAW_PITCH,
-            DRAW_YAW
-        )
-
-    # Lift marker while keeping drawing orientation
-    robot.move_pose(
-        rx,
-        ry,
-        TRAVEL_Z,
-        DRAW_ROLL,
-        DRAW_PITCH,
-        DRAW_YAW
-    )
-
-    # Restore normal wrist orientation
-    robot.move_pose(
-        rx,
-        ry,
-        TRAVEL_Z,
-        ROLL,
-        PITCH,
-        YAW
-    )
+    # Step 6: return to upright at safe pose
+    go_safe()
 
     print("Drawing complete.")
 
@@ -262,14 +286,12 @@ def run_draw_sequence(shape_name):
 #  GUI CALLBACK
 # -----------------------------------------------
 def on_choice(choice, root):
-    # Disable all buttons while drawing so user can't double-click
     set_buttons_state(root, tk.DISABLED)
     root.title("Drawing: " + choice + "...")
     root.update()
     try:
         run_draw_sequence(choice)
         root.title("Shape Selector - Done!")
-        # Ask if user wants to draw another
         again = messagebox.askyesno(
             "Done!",
             "Finished drawing: " + choice + "\n\nDraw another shape?"
@@ -368,6 +390,7 @@ def create_icon(root, shape):
                 fill_circle(dx, dy, 6, C)
     elif shape == "Trapezoid":
         fill_polygon([(18, 22), (54, 22), (62, 54), (10, 54)], C)
+    elif shape == "Hexagon":
     else:
         fill_rect(16, 16, 56, 56, "#0a6f9b")
 
