@@ -21,9 +21,19 @@ MIN_Y = -0.10
 MAX_Y = 0.10
 DRAW_Z   = 0.10
 TRAVEL_Z = 0.14
-ROLL  = 0
+
+# NORMAL TOOL ORIENTATION
+
+ROLL  = 0.0
 PITCH = 1.57
-YAW   = 0
+YAW   = 0.0
+
+# DRAWING ORIENTATION
+
+DRAW_ROLL  = 0.0
+DRAW_PITCH = 0.08
+DRAW_YAW   = 0.1
+
 # -----------------------------------------------
 #  MARKER HOLDER POSITION
 #  Set these to wherever your marker holder sits
@@ -85,8 +95,8 @@ def scale_coordinate(x, y):
     robot_y = MIN_Y + (y / 100.0) * (MAX_Y - MIN_Y)
     return robot_x, robot_y
 
-def move_to(x, y, z,ROLL = 0, PITCH=1.57, YAW = 0):
-    robot.move_pose(x, y, z, ROLL, PITCH, YAW)
+def move_to(x, y, z, roll=ROLL, pitch=PITCH, yaw=YAW):
+    robot.move_pose(x, y, z, roll, pitch, yaw)
 
 # -----------------------------------------------
 #  SHAPE GENERATORS
@@ -179,17 +189,64 @@ def generate_shape(shape_name):
 def draw_shape(points):
     if not points:
         return
+
     print("Drawing " + str(len(points)) + " points...")
+
+    # First point
     rx, ry = scale_coordinate(*points[0])
-    move_to(rx,ry, TRAVEL_Z)
-    move_to(rx, ry, DRAW_Z)
+
+    # Move above start point using normal orientation
+    move_to(rx, ry, TRAVEL_Z)
+
+    # Rotate wrist once and lower to drawing height
+    robot.move_pose(
+        rx, ry, DRAW_Z,
+        DRAW_ROLL,
+        DRAW_PITCH,
+        DRAW_YAW
+    )
+
+    # Draw shape using drawing orientation
     for pt in points:
         px = max(0.0, min(100.0, pt[0]))
         py = max(0.0, min(100.0, pt[1]))
+
         rx, ry = scale_coordinate(px, py)
-        print("  -> X=" + str(round(rx, 3)) + "  Y=" + str(round(ry, 3)))
-        move_to(rx, ry, DRAW_Z)
-    move_to(rx, ry, TRAVEL_Z)
+
+        print(
+            "  -> X=" + str(round(rx, 3)) +
+            "  Y=" + str(round(ry, 3))
+        )
+
+        robot.move_pose(
+            rx,
+            ry,
+            DRAW_Z,
+            DRAW_ROLL,
+            DRAW_PITCH,
+            DRAW_YAW
+        )
+
+    # Lift marker while keeping drawing orientation
+    robot.move_pose(
+        rx,
+        ry,
+        TRAVEL_Z,
+        DRAW_ROLL,
+        DRAW_PITCH,
+        DRAW_YAW
+    )
+
+    # Restore normal wrist orientation
+    robot.move_pose(
+        rx,
+        ry,
+        TRAVEL_Z,
+        ROLL,
+        PITCH,
+        YAW
+    )
+
     print("Drawing complete.")
 
 # -----------------------------------------------
