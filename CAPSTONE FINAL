@@ -1,0 +1,479 @@
+# !/usr/bin/env python3
+import math
+import tkinter as tk
+from tkinter import messagebox
+from pyniryo import NiryoRobot
+
+# -----------------------------------------------
+#  ROBOT CONNECTION
+# -----------------------------------------------
+print("Connecting to Ned2 robot...")
+robot = NiryoRobot("10.10.10.10")
+robot.calibrate_auto()
+robot.update_tool()
+print("Robot connected.")
+robot.clear_collision_detected()
+robot.led_ring_rainbow_cycle()
+
+# -----------------------------------------------
+#  ORIENTATIONS
+#  UPRIGHT  - used for travel, pickup, putdown
+#  DRAWING  - tilted so marker tip faces paper
+# -----------------------------------------------
+UPRIGHT_ROLL  = 0
+UPRIGHT_PITCH = 1.57
+UPRIGHT_YAW   = 0
+
+DRAW_ROLL  = -0.11
+DRAW_PITCH =  0.165
+DRAW_YAW   = -0.125
+
+# -----------------------------------------------
+#  WORKSPACE BOUNDARIES (metres)
+# -----------------------------------------------
+
+#MIN_X = 0.15
+#MAX_X = 0.35
+
+MIN_X = 0.3
+MAX_X = .45
+MIN_Y = -0.08
+MAX_Y = 0.08
+
+#CENTER_X = 0.3
+#CENTER_Y = .01
+
+#MIN_X = CENTER_X - 0.05
+#MAX_X = CENTER_X + 0.05
+
+#MIN_Y = CENTER_Y - 0.05
+#MAX_Y = CENTER_Y + 0.05
+
+DRAW_Z   = 0.1    # pen-on-paper height (drawing orientation)
+TRAVEL_Z = 0.14    # pen-up travel height
+
+# -----------------------------------------------
+#  SAFE INTERMEDIATE POSE
+#  Robot passes through here when moving between
+#  pickup and the drawing area to avoid singularities.
+#  Adjust if needed - this is roughly centre of workspace.
+# -----------------------------------------------
+SAFE_X = 0.25
+SAFE_Y = 0.00
+SAFE_Z = 0.18
+
+# -----------------------------------------------
+#  MARKER HOLDER POSITION
+# -----------------------------------------------
+MARKER_X      = 0.1272
+MARKER_Y      = 0.2587
+MARKER_Z_UP   = 0.07   # hover height above holder
+MARKER_Z_GRIP = 0.0538   # grip height inside holder
+
+observation_pose = (0.1272,0.2587,0.0538,1.6111,1.4635,1.615)
+
+# -----------------------------------------------
+#  GUI CONSTANTS
+# -----------------------------------------------
+LIGHT_BLUE     = "#d6f2ff"
+ICON_SIZE      = 72
+BUTTON_CHOICES = [
+    "Square",
+    "Circle",
+    "Triangle",
+    "Wave",
+    "Spiral",
+    "Polka Dots",
+    "Trapezoid",
+    "Hexagon",
+]
+
+# -----------------------------------------------
+#  LOW-LEVEL MOVE HELPERS
+# -----------------------------------------------
+
+
+def move_upright(x, y, z):
+    """Move to a pose using the upright (travel) orientation."""
+    robot.move_pose(x, y, z, UPRIGHT_ROLL, UPRIGHT_PITCH, UPRIGHT_YAW)
+
+
+def move_drawing(x, y, z):
+    """Move to a pose using the tilted drawing orientation."""
+
+    robot.move_pose(x, y, z, DRAW_ROLL, DRAW_PITCH, DRAW_YAW)
+
+
+def go_safe():
+    """Move to the safe intermediate pose (upright)."""
+    move_upright(SAFE_X, SAFE_Y, SAFE_Z)
+
+# -----------------------------------------------
+#  MARKER PICKUP / DROP OFF
+# -----------------------------------------------
+def pick_up_marker():
+    print("Picking up marker...")
+    robot.open_gripper(500)
+    go_safe()                                                      # clear path first
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_UP)                 # hover above holder
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_GRIP)               # lower onto marker
+    robot.close_gripper(500)
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_UP)                 # lift up (still upright)
+    go_safe()                                                      # back to safe zone
+    print("Marker picked up.")
+
+def put_down_marker():
+    print("Putting down marker...")
+    go_safe()                                                      # come back upright first
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_UP)                 # hover above holder
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_GRIP)               # lower into holder
+    robot.open_gripper(500)
+    move_upright(MARKER_X, MARKER_Y, MARKER_Z_UP)                 # lift away
+    go_safe()
+    print("Marker put down.")
+
+# -----------------------------------------------
+#  COORDINATE HELPERS
+# -----------------------------------------------
+def scale_coordinate(x, y):
+    robot_x = MIN_X + (x / 100.0) * (MAX_X - MIN_X)
+    robot_y = MIN_Y + (y / 100.0) * (MAX_Y - MIN_Y)
+    return robot_x, robot_y
+
+# -----------------------------------------------
+#  SHAPE GENERATORS
+# -----------------------------------------------
+def generate_circle():
+    robot.play_sound('Circle.mp3')
+    robot.led_ring_solid([17, 186, 79])
+    points = []
+    radius = 35
+    for deg in range(0, 361, 5):
+        rad = math.radians(deg)
+        points.append((50 + radius * math.cos(rad),
+                        50 + radius * math.sin(rad)))
+    return points
+
+def generate_square():
+    robot.play_sound('Square.mp3')
+    robot.led_ring_solid([207, 20, 55])
+    return [(20, 20), (80, 20), (80, 80), (20, 80), (20, 20)]
+
+def generate_triangle():
+    robot.play_sound('Triangle.mp3')
+    robot.led_ring_solid([17, 86, 199])
+    return [(50, 85), (15, 15), (85, 15), (50, 85)]
+
+def generate_spiral():
+    robot.play_sound('Spiral.mp3')
+    robot.led_ring_solid([235, 186, 25])
+    points = []
+    for t in range(0, 720, 5):
+        angle  = math.radians(t)
+        radius = t * 0.05
+        points.append((50 + radius * math.cos(angle),
+                        50 + radius * math.sin(angle)))
+    return points
+
+def generate_wave():
+    robot.play_sound('Wave.mp3')
+    robot.led_ring_solid([232, 232, 232])
+    points = []
+    for x in range(0, 101, 2):
+        y = 50 + 20 * math.sin(x * 0.15)
+        points.append((x, y))
+    return points
+
+def generate_heart():
+    points = []
+    for t in range(0, 360, 3):
+        rad = math.radians(t)
+        x = 16 * math.sin(rad) ** 3
+        y = (13 * math.cos(rad)
+             - 5 * math.cos(2 * rad)
+             - 2 * math.cos(3 * rad)
+             - math.cos(4 * rad))
+        points.append((50 + x * 2, 50 + y * 2))
+    return points
+
+def generate_trapezoid():
+    robot.play_sound('Trapezoid.mp3')
+    robot.led_ring_solid([227, 124, 50])
+    return [(30, 20), (70, 20), (85, 80), (15, 80), (30, 20)]
+
+def generate_hexagon():
+    robot.play_sound('Hexagon.mp3')
+    robot.led_ring_solid([124, 23, 196])
+    points = []
+    for deg in range(0, 361, 60):
+        rad = math.radians(deg)
+        points.append((50 + 35 * math.cos(rad),
+                        50 + 35 * math.sin(rad)))
+    return points
+
+def generate_polka_dots():
+    robot.play_sound('Polka dots.mp3')
+    robot.led_ring_solid([200, 39, 212])
+    points = []
+    for cx in range(20, 81, 20):
+        for cy in range(20, 81, 20):
+            for deg in range(0, 361, 30):
+                rad = math.radians(deg)
+                points.append((cx + 3 * math.cos(rad),
+                                cy + 3 * math.sin(rad)))
+    return points
+
+def generate_shape(shape_name):
+    name = shape_name.lower().strip()
+    dispatch = {
+        "circle":     generate_circle,
+        "square":     generate_square,
+        "triangle":   generate_triangle,
+        "spiral":     generate_spiral,
+        "wave":       generate_wave,
+        "heart":      generate_heart,
+        "trapezoid":  generate_trapezoid,
+        "hexagon":    generate_hexagon,
+        "polka dots": generate_polka_dots,
+    }
+    if name not in dispatch:
+        print("Unknown shape. Defaulting to square.")
+        return generate_square()
+    return dispatch[name]()
+
+# -----------------------------------------------
+#  ROBOT DRAWING
+#  Sequence per shape:
+#    1. Travel upright to first point (high)
+#    2. Tilt to drawing orientation at travel height
+#    3. Lower pen to paper
+#    4. Draw all points in drawing orientation
+#    5. Lift pen (drawing orientation, travel height)
+#    6. Return to upright at safe pose
+# -----------------------------------------------
+def draw_shape(points):
+    if not points:
+        return
+    print("Drawing " + str(len(points)) + " points...")
+
+    first_rx, first_ry = scale_coordinate(*points[0])
+    
+
+    # Step 1: travel upright to above first point
+    move_upright(first_rx, first_ry, TRAVEL_Z)
+
+    # Step 2: tilt into drawing orientation (still at travel height)
+    move_drawing(first_rx, first_ry, TRAVEL_Z)
+
+    # Step 3: lower pen to paper
+    move_drawing(first_rx, first_ry, DRAW_Z)
+
+    # Step 4: draw all points
+    last_rx, last_ry = first_rx, first_ry
+    for pt in points:
+        px = max(0.0, min(100.0, pt[0]))
+        py = max(0.0, min(100.0, pt[1]))
+        last_rx, last_ry = scale_coordinate(px, py)
+        print("  -> X=" + str(round(last_rx, 3)) + "  Y=" + str(round(last_ry, 3)))
+        move_drawing(last_rx, last_ry, DRAW_Z)
+
+    # Step 5: lift pen (keep drawing orientation to avoid jerking)
+    move_drawing(last_rx, last_ry, TRAVEL_Z)
+
+    # Step 6: return to upright at safe pose
+    go_safe()
+
+    print("Drawing complete.")
+
+# -----------------------------------------------
+#  FULL DRAW SEQUENCE (pick up -> draw -> put down)
+# -----------------------------------------------
+def run_draw_sequence(shape_name):
+    pick_up_marker()
+    points = generate_shape(shape_name)
+    draw_shape(points)
+    put_down_marker()
+
+# -----------------------------------------------
+#  GUI CALLBACK
+# -----------------------------------------------
+def on_choice(choice, root):
+    set_buttons_state(root, tk.DISABLED)
+    root.title("Drawing: " + choice + "...")
+    root.update()
+    try:
+        run_draw_sequence(choice)
+        root.title("Shape Selector - Done!")
+        again = messagebox.askyesno(
+            "Done!",
+            "Finished drawing: " + choice + "\n\nDraw another shape?"
+        )
+        if not again:
+            root.destroy()
+            return
+    except Exception as exc:
+        root.title("Shape Selector - Error")
+        messagebox.showerror("Robot Error", str(exc))
+    finally:
+        root.title("Shape Selector")
+        set_buttons_state(root, tk.NORMAL)
+
+def set_buttons_state(root, state):
+    try:
+        for widget in root.button_list:
+            widget.config(state=state)
+    except AttributeError:
+        pass
+
+# -----------------------------------------------
+#  ICON RENDERER
+# -----------------------------------------------
+def create_icon(root, shape):
+    icon = tk.PhotoImage(width=ICON_SIZE, height=ICON_SIZE)
+    icon.put(LIGHT_BLUE, to=(0, 0, ICON_SIZE - 1, ICON_SIZE - 1))
+
+    def px(x, y, color):
+        if 0 <= x < ICON_SIZE and 0 <= y < ICON_SIZE:
+            icon.put(color, (x, y))
+
+    def fill_circle(cx, cy, r, color):
+        for y in range(cy - r, cy + r + 1):
+            for x in range(cx - r, cx + r + 1):
+                if (x - cx) ** 2 + (y - cy) ** 2 <= r ** 2:
+                    px(x, y, color)
+
+    def fill_rect(x1, y1, x2, y2, color):
+        icon.put(color, to=(x1, y1, x2, y2))
+
+    def draw_line(pts, color, thick=2):
+        for start, end in zip(pts, pts[1:]):
+            x1, y1 = start
+            x2, y2 = end
+            steps = max(abs(x2 - x1), abs(y2 - y1), 1)
+            for s in range(steps + 1):
+                bx = int(x1 + (x2 - x1) * s / steps)
+                by = int(y1 + (y2 - y1) * s / steps)
+                for ox in range(-thick, thick + 1):
+                    for oy in range(-thick, thick + 1):
+                        if ox * ox + oy * oy <= thick * thick:
+                            px(bx + ox, by + oy, color)
+
+    def fill_polygon(pts, color):
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        for y in range(max(min(ys), 0), min(max(ys), ICON_SIZE - 1) + 1):
+            xs_cross = []
+            for (x1, y1), (x2, y2) in zip(pts, pts[1:] + [pts[0]]):
+                if y1 == y2:
+                    continue
+                if min(y1, y2) <= y <= max(y1, y2):
+                    xi = x1 + (y - y1) / (y2 - y1) * (x2 - x1)
+                    xs_cross.append(int(round(xi)))
+            if len(xs_cross) >= 2:
+                xs_cross.sort()
+                for x in range(max(xs_cross[0], 0),
+                               min(xs_cross[-1], ICON_SIZE - 1) + 1):
+                    px(x, y, color)
+
+    C = "#1b4f72"
+
+    if shape == "Square":
+        fill_rect(16, 16, 56, 56, C)
+    elif shape == "Circle":
+        fill_circle(36, 36, 22, C)
+    elif shape == "Triangle":
+        fill_polygon([(18, 54), (54, 54), (36, 16)], C)
+    elif shape == "Wave":
+        pts = [(12 + i * 4,
+                int(36 + 12 * math.sin((i / 12) * math.pi * 2)))
+               for i in range(13)]
+        draw_line(pts, C, thick=2)
+    elif shape == "Spiral":
+        pts = []
+        for step in range(181):
+            angle = step * math.pi / 90
+            r = 2 + 18 * (step / 180)
+            pts.append((int(36 + r * math.cos(angle)),
+                        int(36 + r * math.sin(angle))))
+        draw_line(pts, C, thick=1)
+    elif shape == "Polka Dots":
+        for dx in (18, 36, 54):
+            for dy in (18, 36, 54):
+                fill_circle(dx, dy, 6, C)
+    elif shape == "Trapezoid":
+        fill_polygon([(18, 22), (54, 22), (62, 54), (10, 54)], C)
+    elif shape == "Hexagon":
+        fill_polygon([
+            (15, 36),  # left
+            (25, 20),  # upper-left
+            (47, 20),  # upper-right
+            (57, 36),  # right
+            (47, 52),  # lower-right
+            (25, 52),  # lower-left
+        ], C)
+    else:
+        fill_rect(16, 16, 56, 56, "#0a6f9b")
+
+    return icon
+
+# -----------------------------------------------
+#  WINDOW BUILDER
+# -----------------------------------------------
+def build_window():
+    root = tk.Tk()
+    root.title("Shape Selector")
+    root.geometry("560x360")
+    root.resizable(False, False)
+    root.configure(bg=LIGHT_BLUE)
+    root.button_list = []
+
+    tk.Label(root,
+             text="Choose the shape or pattern to draw:",
+             font=("Segoe UI", 14, "bold"),
+             bg=LIGHT_BLUE, pady=14).pack()
+
+    frame = tk.Frame(root, bg=LIGHT_BLUE, padx=12, pady=12)
+    frame.pack(fill="both", expand=True)
+
+    root.icon_images = []
+
+    cols = 4
+    for idx, label in enumerate(BUTTON_CHOICES):
+        icon = create_icon(root, label)
+        root.icon_images.append(icon)
+
+        btn = tk.Button(
+            frame,
+            image=icon,
+            text=label,
+            compound="top",
+            font=("Segoe UI", 9, "bold"),
+            width=110,
+            bg="white",
+            activebackground="#e6f7ff",
+            bd=2,
+            relief="raised",
+            command=lambda v=label: on_choice(v, root),
+        )
+        btn.grid(row=idx // cols, column=idx % cols,
+                 padx=8, pady=8, sticky="nsew")
+        root.button_list.append(btn)
+
+    for c in range(cols):
+        frame.columnconfigure(c, weight=1)
+    for r in range((len(BUTTON_CHOICES) + cols - 1) // cols):
+        frame.rowconfigure(r, weight=1)
+
+    return root
+
+# -----------------------------------------------
+#  ENTRY POINT
+# -----------------------------------------------
+if __name__ == "__main__":
+    try:
+        app = build_window()
+        app.mainloop()
+    finally:
+        print("\nClosing robot connection...")
+        robot.close_connection()
+        print("Done.")
